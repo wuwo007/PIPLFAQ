@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include<regex>
+#include<stack>
 
 using namespace std;
 #define BUFFERLENGTH 200000 
@@ -53,15 +54,18 @@ public:
 
 	bool m_bIfContainUniquePep;
 
+	vector<string> m_vMergedUniquePeptideSequneces;
+	vector<double> m_vMergedUniquePeptideIntensities;
+	vector<int> m_vMergedUniquePeptideLeftLocations;
+	vector<int> m_vMergedUniquePeptideRightLocations;
+
+	double m_dCVOfUniquePeptideIntensities;
+	double m_dCVOfMergedUniquePeptideIntensities;
+
 	string m_strAgentUniquePepSequence;
 	double m_dAgentUniquePepIntensity;
 	int m_iPepNumInMaxSet;
 
-	//vector<string> m_vPeptidesSequences;  //蛋白对应的鉴定肽段
-	//vector<double> m_vIdentPeptideIntensities; //蛋白对应的鉴定肽段的Intensities；
-	//vector<bool> m_vbIfPeptidesShared; // 蛋白对应的鉴定肽段是否是共享肽；若一个肽段对应超过一个蛋白，在将该肽段定义为共享肽；
-	//vector<int> m_vPeptideLeftLocations; // 鉴定肽段左端在蛋白序列中的位置，从0开始；
-	//vector<int> m_vPeptideRightLocations; // 鉴定肽段右端在蛋白序列中的位置
 	
 	map<string, int> m_mapIndentPeptidesSC;       //蛋白对应的鉴定肽段的SC
 
@@ -77,20 +81,45 @@ public:
 	string mf_GetPeptidesAdjacentSequence(string PeptideSequence)const;
 	void Show(void);
 };
+// 邻接表
+struct AdjTableGraph
+{
+	vector<vector<int> > adjTable;
+	vector<vector<double>> adjTableWeight;
+};
 class ProteinInfer
 {
 public:
 	//以蛋白为单位整理鉴定结果，确定每个肽段在蛋白序列中出现的位置
 	//（统计下在同一个蛋白序列出现多次的肽段的数目，目前对这种肽段，暂取第一次匹配的位置）,
 	// 计算唯一肽的intensity CV。
-	void m_fGetPepLocationInProteins(vector<CProtein>& cproteins);
+	void GetPepLocationInProteins(vector<CProtein>& cproteins);
 
+	//判断两个肽段是否有肽段交叉；
+	bool m_fIfPeptideOverlap(int b1, int e1, int b2, int e2);
 
+	// 根据蛋白的unique肽段构建邻接表
+	void CreatAdjTableGraph(const CProtein& cprotein, AdjTableGraph & adjtable);
+
+	// 邻接表深度优先搜索算法迭代
+	vector<int> m_fAdjTableDFS(const AdjTableGraph& graph, int startNode);
+	// 根据图的邻接表，求其所有连通子图
+	void GetSubGraphsByDFS(const AdjTableGraph& adjtable, vector<vector<int>>& vSubSets);
+
+	// 计算各节点上节点及关联节点的权重和；
+	void CalculateNodeIntensity(const AdjTableGraph& adjtable, const vector<double>& vSelfIntensitiesOfNodes, vector<double>& vNodeIntensities);		
+	//计算该连通子图归并后的肽段intensity, 
+	double MergeSubgraphIntensity(const vector<int>& vSubSet, const AdjTableGraph& adjtable, const vector<double>& vNodeIntensities);
+	//计算该连通子图归并后的肽段序列
+	string MergeSubgraphsequence(const vector<int >& vSubSet,const string& proteinsequence, const vector<int>& LeftlLoc, const vector<int>& RightLoc,int& iLeft,int& iRight);
+	
 	// 对每一个蛋白，将该蛋白关联的所有唯一肽段归并为一个肽段，
 	//肽段强度取蛋白质序列上某一个位置上出现的肽段的信号强度最大值，
 	//肽段序列取该位置上的肽段序列的并集。
-	void m_fMergeOverlapUniquePeptides(vector<CProtein>& cproteins);
+	void MergeOverlapUniquePeptides(vector<CProtein>& cproteins);
 
+	// 如果 bIfMerged 为真，则计算合并之后unique肽段的信号强度的CV，如果 bIfMerged 为真，则计算合并之前unique肽段的信号强度的CV
+	void CalculateUniquePepIntensitiesCV(vector<CProtein>& cproteins, bool bIfMerged);
 };
 class CPeptideEnzyme
 {

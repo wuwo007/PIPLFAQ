@@ -594,7 +594,8 @@ void CMaxQuantIO::mf_LoadAllPeptides(const CParam &param, string strPeptideFileP
 			{
 				strProteinNameSuffix = (*vecProteinNameIter).substr(0, param.m_strContaminantProteinPrefix.length());
 
-				if (strProteinNameSuffix == param.m_strContaminantProteinPrefix||(*vecProteinNameIter).find("UPS")==(*vecProteinNameIter).npos)
+				//if (strProteinNameSuffix == param.m_strContaminantProteinPrefix||(*vecProteinNameIter).find("UPS")==(*vecProteinNameIter).npos)
+				if (strProteinNameSuffix == param.m_strContaminantProteinPrefix)
 				{
 					vecProteinNameIter = vecProteinNameTemps.erase(vecProteinNameIter);
 				}
@@ -860,7 +861,8 @@ bool CProteinIO::mf_SaveProteinQuantInfo(string Path, vector<CProtein> cproteins
 		flog.mf_Input("Save quantitative information of proteins into " + Path + "\n");
 	}
 	ofFile << "ProteinName\tShared peptides number\tUnique peptides number\tShared peptides sequences\tUnique peptides sequenes\
-\tShared peptides intensities\tUnique peptides intensities\tPepNumInMaxSet\tAgent peptide sequence\tIntensity of agent peptide\n";
+\tShared peptides intensities\tUnique peptides intensities\tMerged unique peptides number\tMerged unique peptides sequences\tMerged unique peptides intensities\
+\tCV of unique peptides intensities\tCV of merged unique peptides intensities\n";
 	map<string, int>::iterator mapPeptideSCIter;
 	map<string, bool>::iterator mapbIfPeptidesSharedIter;
 	for (size_t i = 0; i<cproteins.size(); i++)
@@ -888,9 +890,20 @@ bool CProteinIO::mf_SaveProteinQuantInfo(string Path, vector<CProtein> cproteins
 			ofFile << cproteins[i].m_vUniquePeptideIntensities[j] << ";";
 		}
 		ofFile << "\t";
-		ofFile << cproteins[i].m_iPepNumInMaxSet << "\t";
-		ofFile << cproteins[i].m_strAgentUniquePepSequence << "\t";
-		ofFile << cproteins[i].m_dAgentUniquePepIntensity << "\t";
+		ofFile << cproteins[i].m_vMergedUniquePeptideSequneces.size()<<"\t";
+		for (int j = 0; j < cproteins[i].m_vMergedUniquePeptideSequneces.size(); j++)
+		{
+			ofFile << cproteins[i].m_vMergedUniquePeptideSequneces[j] << ";";
+		}
+		ofFile << "\t";
+		for (int j = 0; j < cproteins[i].m_vMergedUniquePeptideIntensities.size(); j++)
+		{
+			ofFile << cproteins[i].m_vMergedUniquePeptideIntensities[j] << ";";
+		}
+		ofFile << "\t";
+
+		ofFile << cproteins[i].m_dCVOfUniquePeptideIntensities << "\t";
+		ofFile << cproteins[i].m_dCVOfMergedUniquePeptideIntensities;
 		ofFile << endl;
 	}
 
@@ -899,7 +912,7 @@ bool CProteinIO::mf_SaveProteinQuantInfo(string Path, vector<CProtein> cproteins
 
 }
 
-void CDataIO::mf_LoadPeptidesFromMaxQuant(const CParam &param, vector<CPeptide>& cPeptides)
+void CDataIO::LoadPeptidesFromMaxQuant(const CParam &param, vector<CPeptide>& cPeptides)
 {
 	CMaxQuantIO maxquantio;
 	maxquantio.mf_GetAttributesName(param.m_strExprimentDesignPath);
@@ -910,7 +923,7 @@ void CDataIO::mf_LoadPeptidesFromMaxQuant(const CParam &param, vector<CPeptide>&
 
 }
 //∂¡»Îµ∞∞◊÷ –Ú¡–
-void CDataIO::mf_LoadProteins(const CParam &param, vector<CProtein> &cproteins, \
+void CDataIO::LoadProteins(const CParam &param, vector<CProtein> &cproteins, \
 	const vector<CPeptide>& cpeptides)
 {
 	CProteinIO cproteinio;

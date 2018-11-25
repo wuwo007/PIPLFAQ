@@ -39,8 +39,8 @@ public:
 class CDataIO
 {
 public:
-	void mf_LoadPeptidesFromMaxQuant(const CParam &param, vector<CPeptide>& Peptides);
-	void mf_LoadProteins(const CParam &param, vector<CProtein> &cproteins, \
+	void LoadPeptidesFromMaxQuant(const CParam &param, vector<CPeptide>& Peptides);
+	void LoadProteins(const CParam &param, vector<CProtein> &cproteins, \
 		const vector<CPeptide>& cpeptides);
 
 

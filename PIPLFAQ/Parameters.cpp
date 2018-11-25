@@ -127,7 +127,7 @@ void CParam::Init(string ParamFilePath)
 		cout << "Cannot read the result directory path from the parameter file.\n";
 		exit(2);
 	}
-	flog.mf_Init(m_strPIPLFAQResultPath + "\\Log.txt", ios_base::app);
+	flog.mf_Init(m_strPIPLFAQResultPath + "\\Log.txt", ios_base::out);
 
 	cout << "Start of TestCHelpD:" << endl;
 	flog.mf_Input("Start of TestCHelpD:\n");

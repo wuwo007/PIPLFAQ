@@ -191,9 +191,14 @@ void CProtein::Clear(void)
 
 	m_bIfContainUniquePep = false;
 
+	m_vMergedUniquePeptideSequneces.clear();
+	m_vMergedUniquePeptideIntensities.clear();
+	m_vMergedUniquePeptideLeftLocations.clear();
+	m_vMergedUniquePeptideRightLocations.clear();
+
 }
 
-void ProteinInfer::m_fGetPepLocationInProteins(vector<CProtein>& cproteins)
+void ProteinInfer::GetPepLocationInProteins(vector<CProtein>& cproteins)
 {
 	int iLoc;
 	int iLeftLoc = 0, iRightLoc = 0;
@@ -247,91 +252,233 @@ void ProteinInfer::m_fGetPepLocationInProteins(vector<CProtein>& cproteins)
 
 }
 
-void ProteinInfer::m_fMergeOverlapUniquePeptides(vector<CProtein>& cproteins)
+bool ProteinInfer::m_fIfPeptideOverlap(int b1, int e1, int b2, int e2)
 {
-	map<int, vector<int>> mapLocationAndPeptideIndex;
-	map<int, double> mapLocationAndIntensity;
-	map<int, vector<int>>::iterator mapLocationAndPeptideIndexIter;
-	map<int, double>::iterator mapLocationAndIntensityIter;
+	if (b1 >= b2&&b1 <= e2)
+		return true;
+	else if (e1 >= b2&&e1 <= e2)
+		return true;
+	else if (b2 >= b1&&b2 <= e1)
+		return true;
+	else if (e2 >= b1&&e2 <= e1)
+		return true;
+	else
+		return  false;
+}
+void ProteinInfer::CreatAdjTableGraph(const CProtein& cprotein, AdjTableGraph & adjtable)
+{
+	if (cprotein.m_vUniquePeptideSequneces.size() != cprotein.m_vUniquePeptideLeftLocations.size() ||
+		cprotein.m_vUniquePeptideSequneces.size() != cprotein.m_vUniquePeptideRightLocations.size())
+	{
+		cout << "The dimensions of m_vUniquePeptideSequneces,m_vUniquePeptideLeftLocations and m_vUniquePeptideRightLocations of protein " 
+			<< cprotein.m_strProteinName << " are not same.\n"; 
+		flog.mf_Input("The dimensions of m_vUniquePeptideSequneces,m_vUniquePeptideLeftLocations and m_vUniquePeptideRightLocations of protein "
+			+ cprotein.m_strProteinName + " are not same.\n");
+		flog.mf_Destroy();
+		exit(-1);
+	}
+	adjtable.adjTable.clear();
+	adjtable.adjTableWeight.clear();
+	for (int i = 0; i < cprotein.m_vUniquePeptideSequneces.size(); i++)
+	{
+		adjtable.adjTable.push_back(vector<int>{});
+		adjtable.adjTableWeight.push_back(vector<double>{});
+	}
+	for (int i = 0; i < cprotein.m_vUniquePeptideSequneces.size(); i++)
+	{
+		for (int j = 0; j < cprotein.m_vUniquePeptideSequneces.size(); j++)
+		{
+			if (j!=i&&m_fIfPeptideOverlap(cprotein.m_vUniquePeptideLeftLocations[i], cprotein.m_vUniquePeptideRightLocations[i],
+				cprotein.m_vUniquePeptideLeftLocations[j],cprotein.m_vUniquePeptideRightLocations[j]))
+			{
+				adjtable.adjTable[i].push_back(j);
+				adjtable.adjTableWeight[i].push_back(cprotein.m_vUniquePeptideIntensities[j]);
+			}
+		}
+	}
 
-	vector<int> vPeptideIndexTemp;
+}
+
+// 邻接表深度优先搜索算法迭代
+vector<int> ProteinInfer::m_fAdjTableDFS(const AdjTableGraph& graph, int startNode)
+{
+	int vertexNum = graph.adjTable.size();
+	vector<int> visited(vertexNum, 0);
+	vector<int> visitOrder;
+	stack<int> trace;
+	trace.push(startNode);
+	visited[startNode] = 1;
+
+	while (!trace.empty())
+	{
+		int currentNode = trace.top();
+		trace.pop();
+		visitOrder.push_back(currentNode);
+
+		if (graph.adjTable[currentNode].size() > 0)
+		{
+			for (size_t i = 0; i < graph.adjTable[currentNode].size(); ++i)
+			{
+				if (visited[graph.adjTable[currentNode][i]] == 0)
+				{
+					trace.push(graph.adjTable[currentNode][i]);
+					visited[graph.adjTable[currentNode][i]] = 1;
+				}
+			}
+		}
+	}
+
+	return visitOrder;
+}
+
+void ProteinInfer::GetSubGraphsByDFS(const AdjTableGraph& adjtable, vector<vector<int>>& vSubSets)
+{
+	vSubSets.clear();
+	int iNodeNum = adjtable.adjTable.size();
+	vector<bool> vbVisited(iNodeNum, false);
+	for (int i = 0; i < iNodeNum; i++)
+	{
+		if (!vbVisited[i])
+		{
+			vector<int> visitOrder = m_fAdjTableDFS(adjtable, i);
+			vSubSets.push_back(visitOrder);
+			for (int j = 0; j < visitOrder.size(); j++)
+			{
+				vbVisited[visitOrder[j]] = true;
+				//cout << visitOrder[j] << " ";
+			}
+			//cout << endl;
+		}
+	}
+}
+
+void ProteinInfer::CalculateNodeIntensity(const AdjTableGraph& adjtable, const vector<double>& vSelfIntensitiesOfNodes, vector<double>& vNodeIntensities)
+{
+	int iNodeNum = adjtable.adjTableWeight.size();
+	vNodeIntensities.clear();
+	vNodeIntensities.resize(iNodeNum, 0.0);
+
+	if (vSelfIntensitiesOfNodes.size() != iNodeNum)
+	{
+		cout << "Error:\t the number peptide intensities is wrong.\n";
+		flog.mf_Input("Error:\t the number peptide intensities is wrong.\n");
+		flog.mf_Destroy();
+		exit(-1);
+	}
+
+	for (int i = 0; i < iNodeNum; i++)
+	{
+		vNodeIntensities[i] += vSelfIntensitiesOfNodes[i];
+		for (int j = 0; j < adjtable.adjTableWeight[i].size(); j++)
+		{
+			vNodeIntensities[i] += adjtable.adjTableWeight[i][j];
+		}
+	}
+}
+double ProteinInfer::MergeSubgraphIntensity(const vector<int>& vSubSet, const AdjTableGraph& adjtable, const vector<double>& vNodeIntensities)
+{
+	if (vSubSet.size() == 1)
+		return vNodeIntensities[vSubSet[0]];
+
+	double dMaxIntensity=0.0;
+	for (int i = 0; i < vSubSet.size(); i++)
+	{
+		if (dMaxIntensity < vNodeIntensities[vSubSet[i]])
+			dMaxIntensity = vNodeIntensities[vSubSet[i]];
+	}
+	return dMaxIntensity;
+}
+string ProteinInfer::MergeSubgraphsequence(const vector<int >& vSubSet, const string& proteinsequence, const vector<int>& LeftlLoc,
+	const vector<int>& RightLoc, int& iLeft, int& iRight)
+{
+	if (vSubSet.size() == 1)
+	{
+		iLeft = LeftlLoc[vSubSet[0]];
+		iRight = RightLoc[vSubSet[0]];
+		return proteinsequence.substr(iLeft, iRight - iLeft + 1);
+	}
+
+	iLeft = proteinsequence.size(), iRight = 0;
+	if (LeftlLoc.size() != RightLoc.size())
+	{
+		cout << "The numbe of left locations and right locations are not same.\n";
+		flog.mf_Input("The numbe of left locations and right locations are not same.\n");
+		flog.mf_Destroy();
+		exit(-1);
+	}
+	for (int i = 0; i < vSubSet.size(); i++)
+	{
+		if (LeftlLoc[vSubSet[i]] < iLeft)
+			iLeft = LeftlLoc[vSubSet[i]];
+		if (RightLoc[vSubSet[i]]>iRight)
+			iRight = RightLoc[vSubSet[i]];
+	}
+
+	if (iLeft >= proteinsequence.size() || iRight >= proteinsequence.size())
+	{
+		cout << "The location index is larger than the protein length.\n";
+		flog.mf_Input("The location index is larger than the protein length.\n");
+		flog.mf_Destroy();
+		exit(-1);
+	}
+	return proteinsequence.substr(iLeft, iRight - iLeft + 1);
+}
+
+
+void ProteinInfer::MergeOverlapUniquePeptides(vector<CProtein>& cproteins)
+{
+	AdjTableGraph adjtable;
+	vector<vector<int>> vSubSets;
+	double dPepIntensityTemp;
+	string strPepSequenceTemp;
+	int iLeftLoc;
+	int iRightLoc;
 	for (int i = 0; i < cproteins.size(); i++)
 	{
 		if (cproteins[i].m_bIfContainUniquePep)
 		{
-			mapLocationAndIntensity.clear();
-			mapLocationAndPeptideIndex.clear();
-			for (int j = 0; j < cproteins[i].m_vUniquePeptideLeftLocations.size(); j++)
+			// 根据蛋白的unique肽段构建邻接表
+			CreatAdjTableGraph(cproteins[i], adjtable);
+			//cout << cproteins[i].m_strProteinName << endl;
+			// 根据图的邻接表，求其所有连通子图
+			GetSubGraphsByDFS(adjtable, vSubSets);
+			vector<double> vNodeIntensities;
+			CalculateNodeIntensity(adjtable, cproteins[i].m_vUniquePeptideIntensities, vNodeIntensities);
+			cproteins[i].m_vMergedUniquePeptideSequneces.clear();
+			cproteins[i].m_vMergedUniquePeptideLeftLocations.clear();
+			cproteins[i].m_vMergedUniquePeptideRightLocations.clear();
+			cproteins[i].m_vMergedUniquePeptideIntensities.clear();
+
+			for (int j = 0; j < vSubSets.size(); j++)
 			{
-				int loc = cproteins[i].m_vUniquePeptideLeftLocations[j];
-				for (; loc <= cproteins[i].m_vUniquePeptideRightLocations[j]; loc++)
-				{
-					mapLocationAndPeptideIndexIter = mapLocationAndPeptideIndex.find(loc);
-					if (mapLocationAndPeptideIndexIter == mapLocationAndPeptideIndex.end())
-					{// new location
-						vPeptideIndexTemp.clear();
-						vPeptideIndexTemp.push_back(j);
-						mapLocationAndPeptideIndex.insert(pair<int, vector<int>>(loc, vPeptideIndexTemp));
-					}
-					else
-					{
-						mapLocationAndPeptideIndexIter->second.push_back(j);
-					}
-
-					mapLocationAndIntensityIter = mapLocationAndIntensity.find(loc);
-					if (mapLocationAndIntensityIter == mapLocationAndIntensity.end())
-					{
-						mapLocationAndIntensity.insert(pair<int, double>(loc, cproteins[i].m_vUniquePeptideIntensities[j]));
-					}
-					else
-					{
-						mapLocationAndIntensityIter->second += cproteins[i].m_vUniquePeptideIntensities[j];
-					}
-				}
+				dPepIntensityTemp = MergeSubgraphIntensity(vSubSets[j], adjtable, vNodeIntensities);
+				strPepSequenceTemp = MergeSubgraphsequence(vSubSets[j], cproteins[i].m_strSequence,
+					cproteins[i].m_vUniquePeptideLeftLocations, cproteins[i].m_vUniquePeptideRightLocations, iLeftLoc, iRightLoc);
+				cproteins[i].m_vMergedUniquePeptideSequneces.push_back(strPepSequenceTemp);
+				cproteins[i].m_vMergedUniquePeptideLeftLocations.push_back(iLeftLoc);
+				cproteins[i].m_vMergedUniquePeptideRightLocations.push_back(iRightLoc);
+				cproteins[i].m_vMergedUniquePeptideIntensities.push_back(dPepIntensityTemp);
 			}
+		}		
+	}
+}
 
-			// find the maximum intensity location
-
-	
-			mapLocationAndIntensityIter = mapLocationAndIntensity.begin();
-			int iLocWithMaxIntensity = mapLocationAndIntensityIter->first;
-			double dMaxIntensity = mapLocationAndIntensityIter->second;
-			for (; mapLocationAndIntensityIter != mapLocationAndIntensity.end(); mapLocationAndIntensityIter++)
-			{
-				if (mapLocationAndIntensityIter->second > dMaxIntensity)
-				{
-					dMaxIntensity = mapLocationAndIntensityIter->second;
-					iLocWithMaxIntensity = mapLocationAndIntensityIter->first;
-				}
-			}
-
-			// get the longest peptide sequence
-			int iLeft = cproteins[i].m_strSequence.size(), iRight = 0;
-			mapLocationAndPeptideIndexIter = mapLocationAndPeptideIndex.find(iLocWithMaxIntensity);
-			if (mapLocationAndPeptideIndexIter == mapLocationAndPeptideIndex.end())
-			{
-				cout << "Error:\tCannot find location " << iLocWithMaxIntensity << " in the mapLocationAndPeptideIndex\n";
-				flog.mf_Input("Error:\tCannot find location " + fInt2String(iLocWithMaxIntensity) + " in the mapLocationAndPeptideIndex\n");
-				flog.mf_Destroy();
-				exit(-1);
-			}
-			for (int j = 0; j < mapLocationAndPeptideIndexIter->second.size(); j++)
-			{
-				if (iLeft>cproteins[i].m_vUniquePeptideLeftLocations[mapLocationAndPeptideIndexIter->second[j]])
-				{
-					iLeft = cproteins[i].m_vUniquePeptideLeftLocations[mapLocationAndPeptideIndexIter->second[j]];
-				}
-				if (iRight < cproteins[i].m_vUniquePeptideRightLocations[mapLocationAndPeptideIndexIter->second[j]])
-				{
-					iRight = cproteins[i].m_vUniquePeptideRightLocations[mapLocationAndPeptideIndexIter->second[j]];
-				}
-			}
-
-			cproteins[i].m_strAgentUniquePepSequence = cproteins[i].m_strSequence.substr(iLeft, iRight - iLeft + 1);
-			cproteins[i].m_dAgentUniquePepIntensity = dMaxIntensity;
-			cproteins[i].m_iPepNumInMaxSet = mapLocationAndPeptideIndexIter->second.size();
+void ProteinInfer::CalculateUniquePepIntensitiesCV(vector<CProtein>& cproteins, bool bIfMerged)
+{
+	if (bIfMerged)
+	{
+		for (int i = 0; i < cproteins.size(); i++)
+		{
+			cproteins[i].m_dCVOfMergedUniquePeptideIntensities = CalculateCV(cproteins[i].m_vMergedUniquePeptideIntensities);
 		}
-		
+	}
+	else
+	{
+		for (int i = 0; i < cproteins.size(); i++)
+		{
+			cproteins[i].m_dCVOfUniquePeptideIntensities = CalculateCV(cproteins[i].m_vUniquePeptideIntensities);
+
+		}
 	}
 }
 
